@@ -39,6 +39,24 @@
                         </div>
                     </div>
 
+                    <div class="row mt-2">
+                        <div class="col-md-6">
+                            <label class="labels">Instagram</label>
+                            <input type="text" name="instagram" class="form-control" placeholder="@username">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="labels">WhatsApp</label>
+                            <input type="text" name="whatsapp" class="form-control" placeholder="08xxxxxxxxxx">
+                        </div>
+                    </div>
+
+                    <div class="row mt-2">
+                        <div class="col-md-12">
+                            <label class="labels">Titik Lokasi (Google Maps)</label>
+                            <input type="text" name="maps_link" class="form-control" placeholder="https://www.google.com/maps?q=...">
+                        </div>
+                    </div>
+
                     <div class="mt-5 text-center">
                         <button class="btn btn-primary" type="submit">Ajukan Sekarang</button>
                     </div>

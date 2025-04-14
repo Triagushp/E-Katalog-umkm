@@ -52,4 +52,5 @@ class UmkmController extends Controller
         $umkm->delete();
         return redirect()->route('admin.umkm.requests')->with('error', 'UMKM ditolak.');
     }
+
 }

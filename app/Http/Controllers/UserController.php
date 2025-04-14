@@ -32,11 +32,11 @@ class UserController extends Controller
             'address' => 'nullable|string|max:255',
         ]);
 
-        // Perbaiki update agar eksplisit
+        // Perbarui data user secara eksplisit
         $user->name    = $request->name;
         $user->phone   = $request->phone;
         $user->address = $request->address;
-        $user->save(); // Gunakan save() untuk menyimpan data
+        $user->save(); // Simpan perubahan
 
         return redirect()->route('profile')->with('success', 'Profil berhasil diperbarui!');
     }
@@ -54,20 +54,25 @@ class UserController extends Controller
      */
     public function applyUmkm(Request $request)
     {
-        // Validasi input dari form
+        // Validasi input dari form pengajuan UMKM
         $request->validate([
             'name'        => 'required|string|max:255',
             'description' => 'nullable|string',
             'address'     => 'required|string|max:255',
             'phone'       => 'required|string|max:15',
+            'instagram'   => 'required|url',
+            'whatsapp'    => 'required|url',
+            'latitude'    => 'required|numeric',
+            'longitude'   => 'required|numeric',
         ]);
 
         $user = User::findOrFail(Auth::id());
 
-        // Cek apakah user sudah menjadi UMKM atau sedang dalam proses
+        // Cek apakah user sudah menjadi UMKM atau pengajuan masih pending
         if ($user->role === 'umkm') {
             return response()->json(['message' => 'Anda sudah menjadi UMKM!'], 400);
         }
+
         if ($user->role === 'pending') {
             return response()->json(['message' => 'Pengajuan UMKM Anda sedang diproses!'], 400);
         }
@@ -79,13 +84,16 @@ class UserController extends Controller
             'address'     => $request->address,
             'phone'       => $request->phone,
             'user_id'     => $user->id,
+            'instagram'   => $request->instagram,
+            'whatsapp'    => $request->whatsapp,
+            'latitude'    => $request->latitude,
+            'longitude'   => $request->longitude,
         ]);
 
         // Perbarui status user menjadi pending
         $user->role = 'pending';
         $user->save();
 
-       return redirect()->route('umkm.submitted');
-
+        return redirect()->route('umkm.submitted');
     }
 }
