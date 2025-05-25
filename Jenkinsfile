@@ -67,15 +67,22 @@ pipeline {
                         echo "Waiting for database..."
                         sleep 30
                         
-                        # Test database connection
-                        docker-compose run --rm app php -r "
-                        try {
-                            \$pdo = new PDO('mysql:host=db;dbname=laravel', 'laravel', 'secret');
-                            echo 'Database connection: SUCCESS' . PHP_EOL;
-                        } catch (Exception \$e) {
-                            echo 'Database connection: FAILED - ' . \$e->getMessage() . PHP_EOL;
-                            exit(1);
-                        }"
+                        # Wait for database and test connection
+                        echo "Waiting for database and testing connection..."
+                        for i in {1..10}; do
+                            if docker-compose run --rm app php artisan migrate:status; then
+                                echo "Database connection: SUCCESS"
+                                break
+                            else
+                                echo "Database connection attempt $i failed, retrying in 5 seconds..."
+                                sleep 5
+                                if [ $i -eq 10 ]; then
+                                    echo "Database connection failed after 10 attempts"
+                                    docker-compose logs db
+                                    exit 1
+                                fi
+                            fi
+                        done
                         
                         # Run Laravel commands with error handling
                         echo "Running Laravel setup commands..."
