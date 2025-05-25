@@ -55,6 +55,7 @@ pipeline {
                         sleep 30
                         
                         # Run tests in app container
+			docker-compose run --rm app php artisan config:clear || true
                         docker-compose run --rm app php artisan key:generate
                         docker-compose run --rm app php artisan migrate --force
                         docker-compose run --rm app php artisan test || echo "No tests found, continuing..."
