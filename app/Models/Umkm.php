@@ -42,7 +42,7 @@ class Umkm extends Model
      */
     public function photos()
     {
-        return $this->hasMany(umkmfoto::class);
+        return $this->hasMany(UmkmFoto::class);
     }
 
     /**

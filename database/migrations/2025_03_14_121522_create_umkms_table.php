@@ -11,15 +11,15 @@ return new class extends Migration {
             $table->id();
             $table->unsignedBigInteger('user_id'); // Relasi ke user yang mengajukan
             $table->string('name');
-            $table->string('No hp')->nullable();
+            $table->string('no_hp')->nullable();
             $table->text('alamat');
             $table->text('deskripsi')->nullable();
-            $table->string('kategori');
+            $table->string('kategori_id');
             $table->string('instagram')->nullable();
             $table->string('whatsapp')->nullable();
           
             // Informasi Rekening (Opsional)
-            $table->string('akun_bank')->nullable();
+            $table->string('nama_akun')->nullable();
             $table->string('no_rekening')->nullable();
             $table->string('nama_bank')->nullable();
 

@@ -6,14 +6,14 @@ use Illuminate\Support\Facades\Schema;
 return new class extends Migration {
     public function up(): void
     {
-        Schema::table('umkms', function (Blueprint $table) {
-            $table->unsignedBigInteger('kategori_id')->nullable()->after('name');
+       // Schema::table('umkms', function (Blueprint $table) {
+         //   $table->unsignedBigInteger('kategori_id')->nullable()->after('name');
 
-            $table->foreign('kategori_id')
-                  ->references('id')
-                  ->on('kategori')
-                  ->onDelete('set null');
-        });
+           // $table->foreign('kategori_id')
+             //     ->references('id')
+               //   ->on('kategori')
+                 // ->onDelete('set null');
+        // });
     }
 
     public function down(): void
