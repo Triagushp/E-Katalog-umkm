@@ -1,18 +1,20 @@
-# File: docker-compose.yml
+# File: docker-stack.yml
 version: '3.8'
 
 services:
   app:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    image: e-katalog-umkm
-    container_name: e-katalog-app
-    restart: unless-stopped
-    working_dir: /var/www
-    volumes:
-      - ./:/var/www
-      - ./docker/php/local.ini:/usr/local/etc/php/conf.d/local.ini
+    image: e-katalog-umkm:latest
+    deploy:
+      replicas: 2
+      update_config:
+        parallelism: 1
+        delay: 10s
+      restart_policy:
+        condition: on-failure
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
     networks:
       - app-network
     depends_on:
@@ -21,13 +23,14 @@ services:
 
   webserver:
     image: nginx:alpine
-    container_name: e-katalog-webserver
-    restart: unless-stopped
     ports:
       - "80:80"
       - "443:443"
+    deploy:
+      replicas: 2
+      placement:
+        constraints: [node.role == manager]
     volumes:
-      - ./:/var/www
       - ./docker/nginx:/etc/nginx/conf.d
     networks:
       - app-network
@@ -36,8 +39,6 @@ services:
 
   db:
     image: mysql:8.0
-    container_name: e-katalog-db
-    restart: unless-stopped
     environment:
       MYSQL_DATABASE: e_katalog_umkm
       MYSQL_ROOT_PASSWORD: rootpassword
@@ -45,21 +46,23 @@ services:
       MYSQL_USER: laravel
     volumes:
       - dbdata:/var/lib/mysql
-    ports:
-      - "3306:3306"
+    deploy:
+      replicas: 1
+      placement:
+        constraints: [node.role == manager]
     networks:
       - app-network
 
   redis:
     image: redis:alpine
-    container_name: e-katalog-redis
-    restart: unless-stopped
+    deploy:
+      replicas: 1
     networks:
       - app-network
 
 networks:
   app-network:
-    driver: bridge
+    driver: overlay
 
 volumes:
   dbdata:

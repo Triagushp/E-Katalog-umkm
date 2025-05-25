@@ -1,104 +1,56 @@
+# File: Jenkinsfile
 pipeline {
     agent any
     
     environment {
-        DOCKER_IMAGE = "my-laravel-app"
+        DOCKER_IMAGE = 'e-katalog-umkm'
         DOCKER_TAG = "${BUILD_NUMBER}"
-        PROJECT_PATH = "/home/deployer/projects/your-laravel-project"
+        GITHUB_REPO = 'https://github.com/Triagushp/E-Katalog-umkm.git'
     }
     
     stages {
         stage('Checkout') {
             steps {
-                git branch: 'main', 
-                    credentialsId: 'github-credentials',
-                    url: 'https://github.com/username/repository-name.git'
+                git branch: 'main', url: "${GITHUB_REPO}"
             }
         }
         
-        stage('Environment Setup') {
+        stage('Install Dependencies') {
             steps {
-                script {
-                    // Copy .env file jika belum ada
-                    sh """
-                        cd ${PROJECT_PATH}
-                        if [ ! -f .env ]; then
-                            cp .env.example .env
-                        fi
-                    """
-                }
+                sh 'composer install --no-dev --optimize-autoloader'
+                sh 'npm install'
+                sh 'npm run build'
+            }
+        }
+        
+        stage('Run Tests') {
+            steps {
+                sh 'php artisan test'
             }
         }
         
         stage('Build Docker Image') {
             steps {
-                script {
-                    sh """
-                        cd ${PROJECT_PATH}
-                        docker build -t ${DOCKER_IMAGE}:${DOCKER_TAG} .
-                        docker tag ${DOCKER_IMAGE}:${DOCKER_TAG} ${DOCKER_IMAGE}:latest
-                    """
-                }
-            }
-        }
-        
-        stage('Stop Old Containers') {
-            steps {
-                script {
-                    sh """
-                        cd ${PROJECT_PATH}
-                        docker-compose down || true
-                    """
-                }
+                sh "docker build -t ${DOCKER_IMAGE}:${DOCKER_TAG} ."
+                sh "docker tag ${DOCKER_IMAGE}:${DOCKER_TAG} ${DOCKER_IMAGE}:latest"
             }
         }
         
         stage('Deploy') {
             steps {
-                script {
-                    sh """
-                        cd ${PROJECT_PATH}
-                        docker-compose up -d --build
-                    """
-                }
-            }
-        }
-        
-        stage('Run Migrations') {
-            steps {
-                script {
-                    // Wait for containers to be ready
-                    sh "sleep 30"
-                    
-                    sh """
-                        docker exec laravel_app php artisan migrate --force
-                        docker exec laravel_app php artisan config:cache
-                        docker exec laravel_app php artisan route:cache
-                        docker exec laravel_app php artisan view:cache
-                    """
-                }
+                sh 'docker-compose down'
+                sh 'docker-compose up -d --build'
+                sh 'docker-compose exec -T app php artisan migrate --force'
+                sh 'docker-compose exec -T app php artisan config:cache'
+                sh 'docker-compose exec -T app php artisan route:cache'
+                sh 'docker-compose exec -T app php artisan view:cache'
             }
         }
         
         stage('Health Check') {
             steps {
-                script {
-                    sh """
-                        sleep 20
-                        curl -f http://localhost:80 || exit 1
-                    """
-                }
-            }
-        }
-        
-        stage('Cleanup') {
-            steps {
-                script {
-                    sh """
-                        docker image prune -f
-                        docker system prune -f
-                    """
-                }
+                sh 'sleep 30'
+                sh 'curl -f http://localhost || exit 1'
             }
         }
     }
