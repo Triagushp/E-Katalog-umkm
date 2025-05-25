@@ -10,6 +10,8 @@ services:
     working_dir: /var/www
     volumes:
       - ./:/var/www
+    depends_on:
+      - db
     networks:
       - laravel
 
@@ -22,6 +24,8 @@ services:
     volumes:
       - ./:/var/www
       - ./docker/nginx:/etc/nginx/conf.d
+    depends_on:
+      - app
     networks:
       - laravel
 
@@ -38,16 +42,6 @@ services:
       - "3306:3306"
     volumes:
       - dbdata:/var/lib/mysql
-    networks:
-      - laravel
-
-  composer:
-    image: composer:latest
-    container_name: laravel-composer
-    working_dir: /var/www
-    volumes:
-      - ./:/var/www
-    command: ["composer", "install", "--no-interaction", "--optimize-autoloader"]
     networks:
       - laravel
 
