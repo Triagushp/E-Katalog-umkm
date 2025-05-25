@@ -9,51 +9,6 @@ RUN apt-get update && apt-get install -y \
     libxml2-dev \
     zip \
     unzip \
-    nginx
-
-# Clear cache
-RUN apt-get clean && rm -rf /var/lib/apt/lists/*
-
-# Install PHP extensions
-RUN docker-php-ext-install pdo_mysql mbstring exif pcntl bcmath gd
-
-# Get latest Composer
-COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
-
-# Set working directory
-WORKDIR /var/www
-
-# Copy existing application directory contents
-COPY . /var/www
-
-# Copy existing application directory permissions
-COPY --chown=www-data:www-data . /var/www
-
-RUN git config --global --add safe.directory /var/www
-RUN chown -R www-data:www-data /var/www \
-    && chmod -R 755 /var/www
-USER www-data
-
-# Install composer dependencies
-RUN composer install --no-dev --optimize-autoloader
-
-# Change current user to www
-USER www-data
-
-# Expose port 9000 and start php-fpm server
-EXPOSE 9000
-CMD ["php-fpm"]
-FROM php:8.1-fpm
-
-# Install dependencies
-RUN apt-get update && apt-get install -y \
-    git \
-    curl \
-    libpng-dev \
-    libonig-dev \
-    libxml2-dev \
-    zip \
-    unzip \
     nginx \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
@@ -66,18 +21,25 @@ COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
 # Set working directory
 WORKDIR /var/www
 
-# Copy application files and set permissions
+# Copy source code + set ownership
 COPY --chown=www-data:www-data . /var/www
-RUN chmod -R 755 /var/www/storage /var/www/bootstrap/cache
 
-# Copy or create .env file
-COPY --chown=www-data:www-data .env.example /var/www/.env
+# Set permission khusus storage & cache Laravel
+RUN chmod -R 775 /var/www/storage /var/www/bootstrap/cache
 
-# Switch to www-data user for composer and artisan commands
+# Tambahkan folder /var/www sebagai safe directory untuk Git
+RUN git config --global --add safe.directory /var/www
+
+# Jalankan composer install sebagai user root (agar vendor bisa dibuat), lalu ubah jadi www-data
+RUN composer install --no-dev --optimize-autoloader && \
+    chown -R www-data:www-data /var/www
+
+# Ganti ke user www-data
 USER www-data
-RUN composer install --no-dev --optimize-autoloader
-RUN php artisan key:generate
 
-# Expose port and start php-fpm
+# Generate key di sini kalau mau
+RUN php artisan key:generate || true
+
+# Expose port & run php-fpm
 EXPOSE 9000
 CMD ["php-fpm"]
