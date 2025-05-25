@@ -1,51 +1,64 @@
-FROM php:8.1-fpm
+# Stage 1: Build dependencies
+FROM composer:2 AS composer
+WORKDIR /app
+COPY composer.json composer.lock ./
+RUN composer install --no-dev --no-scripts --no-autoloader --optimize-autoloader
 
-# Install dependencies
-RUN apt-get update && apt-get install -y \
+# Stage 2: Final image
+FROM php:8.1-fpm-alpine
+
+# Install minimal required packages (Alpine is faster)
+RUN apk add --no-cache \
     git \
     curl \
     libpng-dev \
-    libonig-dev \
+    oniguruma-dev \
     libxml2-dev \
-    zip \
-    unzip \
-    nginx \
-    && apt-get clean && rm -rf /var/lib/apt/lists/*
-
-# Install PHP extensions
-RUN docker-php-ext-install pdo_mysql mbstring exif pcntl bcmath gd
-
-# Install Composer
-COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
+    libzip-dev \
+    freetype-dev \
+    libjpeg-turbo-dev \
+    icu-dev \
+    && docker-php-ext-configure gd --with-freetype --with-jpeg \
+    && docker-php-ext-install -j$(nproc) \
+        pdo_mysql \
+        mbstring \
+        exif \
+        pcntl \
+        bcmath \
+        gd \
+        zip \
+        intl
 
 # Set working directory
 WORKDIR /var/www
 
-# Copy composer files first for better layer caching
-COPY composer.json composer.lock ./
+# Copy dependencies from composer stage
+COPY --from=composer /app/vendor ./vendor
 
-# Install dependencies
-RUN composer install --no-dev --optimize-autoloader --no-scripts
-
-# Copy source code
+# Copy application
 COPY . .
 
-# Set ownership dan permissions
+# Copy composer binary
+COPY --from=composer /usr/bin/composer /usr/bin/composer
+
+# Set permissions
 RUN chown -R www-data:www-data /var/www \
+    && chmod -R 755 /var/www \
     && chmod -R 775 /var/www/storage /var/www/bootstrap/cache \
     && chmod +x artisan
 
-# Tambahkan folder /var/www sebagai safe directory untuk Git
-RUN git config --global --add safe.directory /var/www
-
-# Generate autoload files
+# Generate autoloader
 RUN composer dump-autoload --optimize
 
-# Expose port
-EXPOSE 9000
+# Create directories
+RUN mkdir -p storage/logs storage/framework/{cache,sessions,views} \
+    && chown -R www-data:www-data storage
 
-# Switch to www-data user
+# Configure git
+RUN git config --global --add safe.directory /var/www
+
 USER www-data
 
-# Start php-fpm
+EXPOSE 9000
+
 CMD ["php-fpm"]

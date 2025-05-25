@@ -5,6 +5,11 @@ pipeline {
         DOCKER_IMAGE = 'laravel-app'
         DOCKER_TAG = "${BUILD_NUMBER}"
         COMPOSE_PROJECT_NAME = 'laravel'
+        
+        // VPS Configuration
+        VPS_HOST = '192.168.1.100'  // Ganti dengan IP VPS Anda
+        VPS_USER = 'ubuntu'         // Ganti dengan user VPS Anda
+        VPS_PATH = '/var/www/html'  // Path deployment di VPS
     }
     
     stages {
@@ -176,6 +181,71 @@ pipeline {
             }
         }
         
+        // STAGE BARU: Deploy ke VPS
+        stage('Deploy to VPS') {
+            when {
+                branch 'main'
+            }
+            steps {
+                script {
+                    echo 'Deploying to VPS...'
+                    sh '''
+                        # Create production .env file
+                        cp .env.example .env.production
+                        
+                        # Update production environment variables
+                        sed -i 's/APP_ENV=local/APP_ENV=production/' .env.production
+                        sed -i 's/APP_DEBUG=true/APP_DEBUG=false/' .env.production
+                        sed -i 's/DB_HOST=127.0.0.1/DB_HOST=localhost/' .env.production
+                        # Sesuaikan dengan konfigurasi database VPS Anda
+                        
+                        # Sync files to VPS (exclude unnecessary files)
+                        rsync -avz --delete \
+                            --exclude='.git' \
+                            --exclude='node_modules' \
+                            --exclude='vendor' \
+                            --exclude='.env' \
+                            --exclude='storage/logs/*' \
+                            --exclude='storage/framework/cache/*' \
+                            --exclude='storage/framework/sessions/*' \
+                            --exclude='storage/framework/views/*' \
+                            ./ ${VPS_USER}@${VPS_HOST}:${VPS_PATH}/
+                        
+                        # Copy production .env file
+                        scp .env.production ${VPS_USER}@${VPS_HOST}:${VPS_PATH}/.env
+                        
+                        # Execute commands on VPS
+                        ssh ${VPS_USER}@${VPS_HOST} << 'ENDSSH'
+                            cd ${VPS_PATH}
+                            
+                            # Install/Update Composer dependencies
+                            composer install --optimize-autoloader --no-dev
+                            
+                            # Set proper permissions
+                            sudo chown -R www-data:www-data ${VPS_PATH}
+                            sudo chmod -R 755 ${VPS_PATH}
+                            sudo chmod -R 775 ${VPS_PATH}/storage
+                            sudo chmod -R 775 ${VPS_PATH}/bootstrap/cache
+                            
+                            # Laravel commands
+                            php artisan key:generate --force
+                            php artisan migrate --force
+                            php artisan config:cache
+                            php artisan route:cache
+                            php artisan view:cache
+                            
+                            # Restart web server
+                            sudo systemctl restart nginx
+                            # atau sudo systemctl restart apache2
+ENDSSH
+                        
+                        echo "Deployment to VPS completed!"
+                        echo "Application should be available at: http://${VPS_HOST}"
+                    '''
+                }
+            }
+        }
+        
         stage('Deploy to Production') {
             when {
                 branch 'main'
@@ -209,6 +279,9 @@ pipeline {
                 
                 # Clean up unused images
                 docker image prune -f
+                
+                # Clean up temporary files
+                rm -f .env.production
             '''
         }
         success {
