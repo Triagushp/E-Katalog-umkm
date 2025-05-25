@@ -1,71 +1,54 @@
 version: '3.8'
+
 services:
   app:
     build:
       context: .
       dockerfile: Dockerfile
-    image: laravel-app
-    container_name: laravel-app
-    restart: unless-stopped
-    working_dir: /var/www
-    volumes:
-      # Mount volume untuk sharing dengan nginx
-      - app_data:/var/www
-    depends_on:
-      - db
-    networks:
-      - laravel
-    environment:
-      - DB_HOST=db
-      - DB_DATABASE=laravel
-      - DB_USERNAME=laravel
-      - DB_PASSWORD=secret
-    # Tambahkan command untuk copy files ke volume
-    command: >
-      sh -c "
-        cp -r /var/www/* /tmp/app_files/ 2>/dev/null || cp -r /var/www/. /tmp/app_files/ &&
-        rm -rf /var/www/* &&
-        cp -r /tmp/app_files/* /var/www/ &&
-        chown -R www-data:www-data /var/www &&
-        php-fpm
-      "
-
-  webserver:
-    image: nginx:alpine
-    container_name: laravel-webserver
+    container_name: laravel_app
     restart: unless-stopped
     ports:
-      - "8001:80"
+      - "80:80"
     volumes:
-      - app_data:/var/www
-      - ./docker/nginx:/etc/nginx/conf.d
-    depends_on:
-      - app
+      - ./storage:/var/www/html/storage
+      - ./bootstrap/cache:/var/www/html/bootstrap/cache
+    environment:
+      - APP_ENV=production
+      - APP_DEBUG=false
     networks:
-      - laravel
+      - laravel_network
+    depends_on:
+      - db
+      - redis
 
   db:
     image: mysql:8.0
-    container_name: laravel-db
+    container_name: laravel_db
     restart: unless-stopped
     environment:
-      MYSQL_DATABASE: laravel
-      MYSQL_ROOT_PASSWORD: secret
-      MYSQL_PASSWORD: secret
-      MYSQL_USER: laravel
+      MYSQL_DATABASE: laravel_app
+      MYSQL_ROOT_PASSWORD: root_password123
+      MYSQL_USER: laravel_user
+      MYSQL_PASSWORD: secure_password123
+    volumes:
+      - db_data:/var/lib/mysql
     ports:
       - "3306:3306"
-    volumes:
-      - dbdata:/var/lib/mysql
     networks:
-      - laravel
+      - laravel_network
 
-networks:
-  laravel:
-    driver: bridge
+  redis:
+    image: redis:7-alpine
+    container_name: laravel_redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    networks:
+      - laravel_network
 
 volumes:
-  dbdata:
-    driver: local
-  app_data:
-    driver: local
+  db_data:
+
+networks:
+  laravel_network:
+    driver: bridge

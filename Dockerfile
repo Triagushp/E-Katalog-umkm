@@ -1,64 +1,57 @@
-# Stage 1: Build dependencies
-FROM composer:2 AS composer
-WORKDIR /app
-COPY composer.json composer.lock ./
-RUN composer install --no-dev --no-scripts --no-autoloader --optimize-autoloader
+FROM php:8.2-fpm
 
-# Stage 2: Final image
-FROM php:8.1-fpm-alpine
-
-# Install minimal required packages (Alpine is faster)
-RUN apk add --no-cache \
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
     git \
     curl \
     libpng-dev \
-    oniguruma-dev \
+    libonig-dev \
     libxml2-dev \
     libzip-dev \
-    freetype-dev \
-    libjpeg-turbo-dev \
-    icu-dev \
-    && docker-php-ext-configure gd --with-freetype --with-jpeg \
-    && docker-php-ext-install -j$(nproc) \
-        pdo_mysql \
-        mbstring \
-        exif \
-        pcntl \
-        bcmath \
-        gd \
-        zip \
-        intl
+    zip \
+    unzip \
+    nginx \
+    supervisor
+
+# Clear cache
+RUN apt-get clean && rm -rf /var/lib/apt/lists/*
+
+# Install PHP extensions
+RUN docker-php-ext-install pdo_mysql mbstring exif pcntl bcmath gd zip
+
+# Install Redis extension
+RUN pecl install redis && docker-php-ext-enable redis
+
+# Install Composer
+COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
 
 # Set working directory
-WORKDIR /var/www
+WORKDIR /var/www/html
 
-# Copy dependencies from composer stage
-COPY --from=composer /app/vendor ./vendor
+# Copy existing application directory contents
+COPY . /var/www/html
 
-# Copy application
-COPY . .
+# Copy existing application directory permissions
+COPY --chown=www-data:www-data . /var/www/html
 
-# Copy composer binary
-COPY --from=composer /usr/bin/composer /usr/bin/composer
+# Install dependencies
+RUN composer install --no-dev --optimize-autoloader --no-interaction
+
+# Generate application key
+RUN php artisan key:generate
 
 # Set permissions
-RUN chown -R www-data:www-data /var/www \
-    && chmod -R 755 /var/www \
-    && chmod -R 775 /var/www/storage /var/www/bootstrap/cache \
-    && chmod +x artisan
+RUN chown -R www-data:www-data /var/www/html
+RUN chmod -R 775 /var/www/html/storage /var/www/html/bootstrap/cache
 
-# Generate autoloader
-RUN composer dump-autoload --optimize
+# Create supervisor config
+COPY docker/supervisor/supervisord.conf /etc/supervisor/conf.d/supervisord.conf
 
-# Create directories
-RUN mkdir -p storage/logs storage/framework/{cache,sessions,views} \
-    && chown -R www-data:www-data storage
+# Copy nginx config
+COPY docker/nginx/default.conf /etc/nginx/sites-available/default
 
-# Configure git
-RUN git config --global --add safe.directory /var/www
+# Expose port 80
+EXPOSE 80
 
-USER www-data
-
-EXPOSE 9000
-
-CMD ["php-fpm"]
+# Start supervisor
+CMD ["/usr/bin/supervisord", "-c", "/etc/supervisor/conf.d/supervisord.conf"]

@@ -2,269 +2,102 @@ pipeline {
     agent any
     
     environment {
-        DOCKER_IMAGE = 'laravel-app'
+        DOCKER_IMAGE = "my-laravel-app"
         DOCKER_TAG = "${BUILD_NUMBER}"
-        COMPOSE_PROJECT_NAME = 'laravel'
-        
-        // VPS Configuration
-        VPS_HOST = '192.168.1.100'  // Ganti dengan IP VPS Anda
-        VPS_USER = 'ubuntu'         // Ganti dengan user VPS Anda
-        VPS_PATH = '/var/www/html'  // Path deployment di VPS
+        PROJECT_PATH = "/home/deployer/projects/your-laravel-project"
     }
     
     stages {
         stage('Checkout') {
             steps {
-                echo 'Checking out code...'
-                checkout scm
+                git branch: 'main', 
+                    credentialsId: 'github-credentials',
+                    url: 'https://github.com/username/repository-name.git'
             }
         }
         
         stage('Environment Setup') {
             steps {
                 script {
-                    sh '''
-                        # Copy environment file
+                    // Copy .env file jika belum ada
+                    sh """
+                        cd ${PROJECT_PATH}
                         if [ ! -f .env ]; then
                             cp .env.example .env
                         fi
-                        
-                        # Update .env for testing
-                        sed -i 's/DB_HOST=127.0.0.1/DB_HOST=db/' .env
-                        sed -i 's/DB_DATABASE=laravel/DB_DATABASE=laravel/' .env
-                        sed -i 's/DB_USERNAME=root/DB_USERNAME=laravel/' .env
-                        sed -i 's/DB_PASSWORD=/DB_PASSWORD=secret/' .env
-                        
-                        # Debug: Check if artisan exists
-                        ls -la artisan || echo "Artisan file not found in host"
-                    '''
+                    """
                 }
             }
         }
         
-        stage('Build') {
+        stage('Build Docker Image') {
             steps {
                 script {
-                    echo 'Building Docker images...'
-                    sh '''
-                        # Clean up any existing containers
-                        docker-compose down || true
-                        
-                        # Build with no cache
-                        docker-compose build --no-cache
-                        
-                        # Debug: Check if artisan exists in container
-                        docker-compose run --rm app ls -la artisan || echo "Artisan not found in container"
-                    '''
-                }
-            }
-        }
-        
-        stage('Test') {
-            steps {
-                script {
-                    echo 'Running tests...'
-                    sh '''
-                        # Start test environment
-                        docker-compose up -d db
-                        
-                        # Wait for database
-                        echo "Waiting for database..."
-                        sleep 30
-                        
-                        # Wait for database and test connection
-                        echo "Waiting for database and testing connection..."
-                        for i in {1..10}; do
-                            if docker-compose run --rm app php artisan migrate:status; then
-                                echo "Database connection: SUCCESS"
-                                break
-                            else
-                                echo "Database connection attempt $i failed, retrying in 5 seconds..."
-                                sleep 5
-                                if [ $i -eq 10 ]; then
-                                    echo "Database connection failed after 10 attempts"
-                                    docker-compose logs db
-                                    exit 1
-                                fi
-                            fi
-                        done
-                        
-                        # Run Laravel commands with error handling
-                        echo "Running Laravel setup commands..."
-                        
-                        # Clear config cache
-                        docker-compose run --rm app php artisan config:clear || {
-                            echo "Config clear failed, but continuing..."
-                        }
-                        
-                        # Generate application key
-                        docker-compose run --rm app php artisan key:generate --force || {
-                            echo "Key generation failed"
-                            exit 1
-                        }
-                        
-                        # Run migrations
-                        docker-compose run --rm app php artisan migrate --force || {
-                            echo "Migration failed"
-                            exit 1
-                        }
-                        
-                        # Run tests if they exist
-                        docker-compose run --rm app php artisan test || {
-                            echo "No tests found or tests failed, continuing..."
-                        }
-                        
-                        # Cleanup test environment
-                        docker-compose down
-                    '''
-                }
-            }
-        }
-        
-        stage('Deploy to Staging') {
-            steps {
-                script {
-                    echo 'Deploying to staging...'
-                    sh '''
-                        # Stop existing containers
-                        docker-compose down || true
-                        
-                        # Start new deployment
-                        docker-compose up -d
-                        
-                        # Wait for containers to be ready
-                        echo "Waiting for containers to start..."
-                        sleep 30
-                        
-                        # Check if containers are running
-                        docker-compose ps
-                        
-                        # Run Laravel setup commands
-                        echo "Setting up Laravel application..."
-                        
-                        # Generate key if not exists
-                        docker-compose exec -T app php artisan key:generate --force || {
-                            echo "Key generation failed in staging"
-                            exit 1
-                        }
-                        
-                        # Run migrations
-                        docker-compose exec -T app php artisan migrate --force || {
-                            echo "Migration failed in staging"
-                            exit 1
-                        }
-                        
-                        # Cache configuration
-                        docker-compose exec -T app php artisan config:cache || echo "Config cache failed"
-                        docker-compose exec -T app php artisan route:cache || echo "Route cache failed"
-                        docker-compose exec -T app php artisan view:cache || echo "View cache failed"
-                        
-                        # Health check with retry
-                        echo "Performing health check..."
-                        for i in {1..5}; do
-                            if curl -f http://localhost:8001; then
-                                echo "Health check passed"
-                                break
-                            else
-                                echo "Health check attempt $i failed, retrying in 10 seconds..."
-                                sleep 10
-                                if [ $i -eq 5 ]; then
-                                    echo "Health check failed after 5 attempts"
-                                    docker-compose logs app
-                                    docker-compose logs webserver
-                                    exit 1
-                                fi
-                            fi
-                        done
-                    '''
-                }
-            }
-        }
-        
-        // STAGE BARU: Deploy ke VPS
-        stage('Deploy to VPS') {
-            when {
-                branch 'main'
-            }
-            steps {
-                script {
-                    echo 'Deploying to VPS...'
-                    sh '''
-                        # Create production .env file
-                        cp .env.example .env.production
-                        
-                        # Update production environment variables
-                        sed -i 's/APP_ENV=local/APP_ENV=production/' .env.production
-                        sed -i 's/APP_DEBUG=true/APP_DEBUG=false/' .env.production
-                        sed -i 's/DB_HOST=127.0.0.1/DB_HOST=localhost/' .env.production
-                        # Sesuaikan dengan konfigurasi database VPS Anda
-                        
-                        # Sync files to VPS (exclude unnecessary files)
-                        rsync -avz --delete \
-                            --exclude='.git' \
-                            --exclude='node_modules' \
-                            --exclude='vendor' \
-                            --exclude='.env' \
-                            --exclude='storage/logs/*' \
-                            --exclude='storage/framework/cache/*' \
-                            --exclude='storage/framework/sessions/*' \
-                            --exclude='storage/framework/views/*' \
-                            ./ ${VPS_USER}@${VPS_HOST}:${VPS_PATH}/
-                        
-                        # Copy production .env file
-                        scp .env.production ${VPS_USER}@${VPS_HOST}:${VPS_PATH}/.env
-                        
-                        # Execute commands on VPS
-                        ssh ${VPS_USER}@${VPS_HOST} << 'ENDSSH'
-                            cd ${VPS_PATH}
-                            
-                            # Install/Update Composer dependencies
-                            composer install --optimize-autoloader --no-dev
-                            
-                            # Set proper permissions
-                            sudo chown -R www-data:www-data ${VPS_PATH}
-                            sudo chmod -R 755 ${VPS_PATH}
-                            sudo chmod -R 775 ${VPS_PATH}/storage
-                            sudo chmod -R 775 ${VPS_PATH}/bootstrap/cache
-                            
-                            # Laravel commands
-                            php artisan key:generate --force
-                            php artisan migrate --force
-                            php artisan config:cache
-                            php artisan route:cache
-                            php artisan view:cache
-                            
-                            # Restart web server
-                            sudo systemctl restart nginx
-                            # atau sudo systemctl restart apache2
-ENDSSH
-                        
-                        echo "Deployment to VPS completed!"
-                        echo "Application should be available at: http://${VPS_HOST}"
-                    '''
-                }
-            }
-        }
-        
-        stage('Deploy to Production') {
-            when {
-                branch 'main'
-            }
-            steps {
-                script {
-                    echo 'Deploying to production with Docker Swarm...'
-                    sh '''
-                        # Build production image
+                    sh """
+                        cd ${PROJECT_PATH}
                         docker build -t ${DOCKER_IMAGE}:${DOCKER_TAG} .
                         docker tag ${DOCKER_IMAGE}:${DOCKER_TAG} ${DOCKER_IMAGE}:latest
-                        
-                        # Update or create swarm service
-                        docker service update --image ${DOCKER_IMAGE}:latest laravel-app || \
-                        docker service create --name laravel-app --replicas 2 \
-                            --network laravel \
-                            -p 8002:80 \
-                            ${DOCKER_IMAGE}:latest
-                    '''
+                    """
+                }
+            }
+        }
+        
+        stage('Stop Old Containers') {
+            steps {
+                script {
+                    sh """
+                        cd ${PROJECT_PATH}
+                        docker-compose down || true
+                    """
+                }
+            }
+        }
+        
+        stage('Deploy') {
+            steps {
+                script {
+                    sh """
+                        cd ${PROJECT_PATH}
+                        docker-compose up -d --build
+                    """
+                }
+            }
+        }
+        
+        stage('Run Migrations') {
+            steps {
+                script {
+                    // Wait for containers to be ready
+                    sh "sleep 30"
+                    
+                    sh """
+                        docker exec laravel_app php artisan migrate --force
+                        docker exec laravel_app php artisan config:cache
+                        docker exec laravel_app php artisan route:cache
+                        docker exec laravel_app php artisan view:cache
+                    """
+                }
+            }
+        }
+        
+        stage('Health Check') {
+            steps {
+                script {
+                    sh """
+                        sleep 20
+                        curl -f http://localhost:80 || exit 1
+                    """
+                }
+            }
+        }
+        
+        stage('Cleanup') {
+            steps {
+                script {
+                    sh """
+                        docker image prune -f
+                        docker system prune -f
+                    """
                 }
             }
         }
@@ -272,30 +105,13 @@ ENDSSH
     
     post {
         always {
-            echo 'Cleaning up...'
-            sh '''
-                # Clean up test containers
-                docker-compose down || true
-                
-                # Clean up unused images
-                docker image prune -f
-                
-                # Clean up temporary files
-                rm -f .env.production
-            '''
+            cleanWs()
         }
         success {
-            echo 'Pipeline completed successfully!'
+            echo 'Deployment successful!'
         }
         failure {
-            echo 'Pipeline failed!'
-            sh '''
-                echo "=== Container Logs ==="
-                docker-compose logs app || true
-                docker-compose logs db || true
-                echo "=== Container Status ==="
-                docker-compose ps || true
-            '''
+            echo 'Deployment failed!'
         }
     }
 }
