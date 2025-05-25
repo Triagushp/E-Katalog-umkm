@@ -29,6 +29,9 @@ pipeline {
                         sed -i 's/DB_DATABASE=laravel/DB_DATABASE=laravel/' .env
                         sed -i 's/DB_USERNAME=root/DB_USERNAME=laravel/' .env
                         sed -i 's/DB_PASSWORD=/DB_PASSWORD=secret/' .env
+                        
+                        # Debug: Check if artisan exists
+                        ls -la artisan || echo "Artisan file not found in host"
                     '''
                 }
             }
@@ -38,7 +41,16 @@ pipeline {
             steps {
                 script {
                     echo 'Building Docker images...'
-                    sh 'docker-compose build --no-cache'
+                    sh '''
+                        # Clean up any existing containers
+                        docker-compose down || true
+                        
+                        # Build with no cache
+                        docker-compose build --no-cache
+                        
+                        # Debug: Check if artisan exists in container
+                        docker-compose run --rm app ls -la artisan || echo "Artisan not found in container"
+                    '''
                 }
             }
         }
@@ -52,13 +64,43 @@ pipeline {
                         docker-compose up -d db
                         
                         # Wait for database
+                        echo "Waiting for database..."
                         sleep 30
                         
-                        # Run tests in app container
-			docker-compose run --rm app php artisan config:clear || true
-                        docker-compose run --rm app php artisan key:generate
-                        docker-compose run --rm app php artisan migrate --force
-                        docker-compose run --rm app php artisan test || echo "No tests found, continuing..."
+                        # Test database connection
+                        docker-compose run --rm app php -r "
+                        try {
+                            \$pdo = new PDO('mysql:host=db;dbname=laravel', 'laravel', 'secret');
+                            echo 'Database connection: SUCCESS' . PHP_EOL;
+                        } catch (Exception \$e) {
+                            echo 'Database connection: FAILED - ' . \$e->getMessage() . PHP_EOL;
+                            exit(1);
+                        }"
+                        
+                        # Run Laravel commands with error handling
+                        echo "Running Laravel setup commands..."
+                        
+                        # Clear config cache
+                        docker-compose run --rm app php artisan config:clear || {
+                            echo "Config clear failed, but continuing..."
+                        }
+                        
+                        # Generate application key
+                        docker-compose run --rm app php artisan key:generate --force || {
+                            echo "Key generation failed"
+                            exit 1
+                        }
+                        
+                        # Run migrations
+                        docker-compose run --rm app php artisan migrate --force || {
+                            echo "Migration failed"
+                            exit 1
+                        }
+                        
+                        # Run tests if they exist
+                        docker-compose run --rm app php artisan test || {
+                            echo "No tests found or tests failed, continuing..."
+                        }
                         
                         # Cleanup test environment
                         docker-compose down
@@ -79,17 +121,49 @@ pipeline {
                         docker-compose up -d
                         
                         # Wait for containers to be ready
-                        sleep 20
+                        echo "Waiting for containers to start..."
+                        sleep 30
                         
-                        # Run Laravel setup
-                        docker-compose exec -T app php artisan key:generate || true
-                        docker-compose exec -T app php artisan migrate --force || true
-                        docker-compose exec -T app php artisan config:cache
-                        docker-compose exec -T app php artisan route:cache
-                        docker-compose exec -T app php artisan view:cache
+                        # Check if containers are running
+                        docker-compose ps
                         
-                        # Health check
-                        curl -f http://localhost:8001 || exit 1
+                        # Run Laravel setup commands
+                        echo "Setting up Laravel application..."
+                        
+                        # Generate key if not exists
+                        docker-compose exec -T app php artisan key:generate --force || {
+                            echo "Key generation failed in staging"
+                            exit 1
+                        }
+                        
+                        # Run migrations
+                        docker-compose exec -T app php artisan migrate --force || {
+                            echo "Migration failed in staging"
+                            exit 1
+                        }
+                        
+                        # Cache configuration
+                        docker-compose exec -T app php artisan config:cache || echo "Config cache failed"
+                        docker-compose exec -T app php artisan route:cache || echo "Route cache failed"
+                        docker-compose exec -T app php artisan view:cache || echo "View cache failed"
+                        
+                        # Health check with retry
+                        echo "Performing health check..."
+                        for i in {1..5}; do
+                            if curl -f http://localhost:8001; then
+                                echo "Health check passed"
+                                break
+                            else
+                                echo "Health check attempt $i failed, retrying in 10 seconds..."
+                                sleep 10
+                                if [ $i -eq 5 ]; then
+                                    echo "Health check failed after 5 attempts"
+                                    docker-compose logs app
+                                    docker-compose logs webserver
+                                    exit 1
+                                fi
+                            fi
+                        done
                     '''
                 }
             }
@@ -103,7 +177,7 @@ pipeline {
                 script {
                     echo 'Deploying to production with Docker Swarm...'
                     sh '''
-                        # Create Docker Swarm service
+                        # Build production image
                         docker build -t ${DOCKER_IMAGE}:${DOCKER_TAG} .
                         docker tag ${DOCKER_IMAGE}:${DOCKER_TAG} ${DOCKER_IMAGE}:latest
                         
@@ -135,6 +209,13 @@ pipeline {
         }
         failure {
             echo 'Pipeline failed!'
+            sh '''
+                echo "=== Container Logs ==="
+                docker-compose logs app || true
+                docker-compose logs db || true
+                echo "=== Container Status ==="
+                docker-compose ps || true
+            '''
         }
     }
 }

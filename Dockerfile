@@ -21,25 +21,31 @@ COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
 # Set working directory
 WORKDIR /var/www
 
-# Copy source code + set ownership
-COPY --chown=www-data:www-data . /var/www
+# Copy composer files first for better layer caching
+COPY composer.json composer.lock ./
 
-# Set permission khusus storage & cache Laravel
-RUN chmod -R 775 /var/www/storage /var/www/bootstrap/cache
+# Install dependencies
+RUN composer install --no-dev --optimize-autoloader --no-scripts
+
+# Copy source code
+COPY . .
+
+# Set ownership dan permissions
+RUN chown -R www-data:www-data /var/www \
+    && chmod -R 775 /var/www/storage /var/www/bootstrap/cache \
+    && chmod +x artisan
 
 # Tambahkan folder /var/www sebagai safe directory untuk Git
 RUN git config --global --add safe.directory /var/www
 
-# Jalankan composer install sebagai user root (agar vendor bisa dibuat), lalu ubah jadi www-data
-RUN composer install --no-dev --optimize-autoloader && \
-    chown -R www-data:www-data /var/www
+# Generate autoload files
+RUN composer dump-autoload --optimize
 
-# Ganti ke user www-data
+# Expose port
+EXPOSE 9000
+
+# Switch to www-data user
 USER www-data
 
-# Generate key di sini kalau mau
-RUN php artisan key:generate || true
-
-# Expose port & run php-fpm
-EXPOSE 9000
+# Start php-fpm
 CMD ["php-fpm"]
