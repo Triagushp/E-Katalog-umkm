@@ -1,4 +1,3 @@
-# File: Dockerfile
 FROM php:8.1-fpm
 
 # Install system dependencies
