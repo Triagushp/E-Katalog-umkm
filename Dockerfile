@@ -1,6 +1,6 @@
 FROM php:8.1-fpm
 
-# Install system dependencies
+# Install system dependencies including nginx
 RUN apt-get update && apt-get install -y \
     git \
     curl \
@@ -10,7 +10,9 @@ RUN apt-get update && apt-get install -y \
     zip \
     unzip \
     nodejs \
-    npm
+    npm \
+    nginx \
+    supervisor
 
 # Clear cache
 RUN apt-get clean && rm -rf /var/lib/apt/lists/*
@@ -26,17 +28,23 @@ WORKDIR /var/www
 
 # Copy existing application directory contents
 COPY . /var/www
-
-# Copy existing application directory permissions
 COPY --chown=www-data:www-data . /var/www
 
 # Install dependencies
 RUN composer install --no-dev --optimize-autoloader
 RUN npm install && npm run build
 
-# Change current user to www
-USER www-data
+# Copy nginx configuration
+COPY docker/nginx.conf /etc/nginx/sites-available/default
 
-# Expose port 9000 and start php-fpm server
-EXPOSE 9000
-CMD ["php-fpm"]
+# Copy supervisor configuration
+COPY docker/supervisord.conf /etc/supervisor/conf.d/supervisord.conf
+
+# Create required directories
+RUN mkdir -p /var/log/supervisor
+
+# Expose port 80
+EXPOSE 80
+
+# Start supervisor (manages nginx + php-fpm)
+CMD ["/usr/bin/supervisord", "-c", "/etc/supervisor/conf.d/supervisord.conf"]
