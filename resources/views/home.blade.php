@@ -506,7 +506,7 @@
             <img src="https://cdn.rri.co.id/berita/Jember/o/1740822514963-1000082727/1owm4453sijc9mz.jpeg" class="d-block w-100" alt="UMKM Bondowoso">
             <div class="carousel-overlay">
               <div class="container">
-                <h1 class="display-4 fw-bold mb-3">Dukung UMKM Lokal Jember</h1>
+                <h1 class="display-4 fw-bold mb-3">Dukung UMKM Lokal Bondowoso</h1>
                 <p class="fs-5 mb-4">Temukan produk berkualitas dari pengrajin dan wirausaha terbaik</p>
                 <a href="#kategori" class="btn btn-light rounded-pill px-4 py-2 fw-semibold">Jelajahi Sekarang</a>
               </div>
